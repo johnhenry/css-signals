@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>css-signals verify (running)</title>
+<style>
+  :root { color-scheme: light dark; font: 15px/1.4 system-ui, sans-serif; }
+  body { margin: 0; padding: 1rem; min-height: 400vh; }
+  table { border-collapse: collapse; width: 100%; max-width: 60rem; }
+  td, th { text-align: left; padding: .2rem .5rem; border-bottom: 1px solid #8884; vertical-align: top; }
+  .PASS { color: #0a7d2c; } .FAIL { color: #c00; font-weight: 700; } .SKIP { color: #888; }
+  #summary { font-size: 1.2rem; font-weight: 700; }
+  code { font: 12px ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<p id="summary">running...</p>
+<p><code id="env"></code></p>
+<table id="results"><thead><tr><th></th><th>check</th><th>detail</th></tr></thead><tbody></tbody></table>
+<script type="module">
+import {
+  createSignals, cycle, date, framed, functionsCss, input, keyboard, pointer, random, scroll, viewport,
+} from "../src/index.mjs";
+
+const results = [];
+window.__partial = results;
+const frames = async (n = 3) => { for (let i = 0; i < n; i++) await new Promise((r) => requestAnimationFrame(r)); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const root = document.documentElement;
+const computed = (name, el = root) => getComputedStyle(el).getPropertyValue(name).trim();
+const near = (a, b, eps = 0.01) => Math.abs(Number(a) - Number(b)) <= eps;
+const scrollTo = async (fraction) => {
+  const se = document.scrollingElement;
+  se.scrollTop = (se.scrollHeight - se.clientHeight) * fraction;
+  await frames(4);
+  return se.scrollTop / (se.scrollHeight - se.clientHeight);
+};
+
+const check = async (name, fn) => {
+  window.__current = name;
+  try {
+    const out = await fn();
+    if (out?.skip) results.push({ name, status: "SKIP", detail: out.skip });
+    else results.push({ name, status: "PASS", detail: out ?? "" });
+  } catch (error) {
+    results.push({ name, status: "FAIL", detail: String(error?.message ?? error) });
+  }
+};
+const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
+
+const nativeScroll = CSS.supports("animation-timeline: scroll()");
+// 1 ------------------------------------------------------------------------
+await check("scroll progress follows the page (native or JS)", async () => {
+  const s = createSignals({ prefix: "a" }).use(scroll());
+  await frames(2);
+  const got = [];
+  for (const f of [0.25, 0.5, 1]) {
+    const actual = await scrollTo(f);
+    const value = computed("--a-scroll-y-progress");
+    expect(near(value, actual), `at ${f}: expected ${actual.toFixed(4)}, got ${value}`);
+    got.push(Number(value).toFixed(3));
+  }
+  const wroteInline = root.style.getPropertyValue("--a-scroll-y-progress") !== "";
+  s.dispose();
+  await scrollTo(0);
+  return `${nativeScroll ? "native" : "JS fallback"} (${got.join(", ")}); JS wrote it: ${wroteInline}`;
+});
+
+await check("native mode means JS never wrote scroll progress", async () => {
+  if (!nativeScroll) return { skip: "no scroll-driven animations in this browser" };
+  const s = createSignals({ prefix: "b" }).use(scroll());
+  await scrollTo(0.5);
+  const wrote = root.style.getPropertyValue("--b-scroll-y-progress") !== "";
+  s.dispose();
+  await scrollTo(0);
+  expect(!wrote, "JS wrote the value; the native path was not used");
+});
+
+await check("dynamic prefix: two prefixes coexist, native for both", async () => {
+  const one = createSignals({ prefix: "one" }).use(scroll());
+  const two = createSignals({ prefix: "two" }).use(scroll());
+  const actual = await scrollTo(0.5);
+  const a = computed("--one-scroll-y-progress");
+  const b = computed("--two-scroll-y-progress");
+  one.dispose();
+  const afterDispose = await scrollTo(0.5);
+  const still = computed("--two-scroll-y-progress");
+  two.dispose();
+  await scrollTo(0);
+  expect(near(a, actual) && near(b, actual), `one=${a} two=${b} expected ${actual.toFixed(3)}`);
+  expect(near(still, afterDispose), `after disposing "one", "two" read ${still} (expected ${afterDispose.toFixed(3)})`);
+});
+
+await check("invalid prefix is rejected", () => {
+  for (const prefix of ["1bad", "a b", "--x"]) {
+    let threw = false;
+    try { createSignals({ prefix }); } catch (error) { threw = error instanceof TypeError; }
+    expect(threw, `${JSON.stringify(prefix)} was accepted`);
+  }
+});
+
+await check("empty prefix gives unprefixed names", async () => {
+  const s = createSignals({ prefix: "" }).use(viewport());
+  await frames(2);
+  const w = computed("--viewport-width");
+  s.dispose();
+  expect(Number(w) === innerWidth, `--viewport-width was "${w}"`);
+});
+
+// 2 ------------------------------------------------------------------------
+await check("a user's :root animation wins; native progress falls back to JS", async () => {
+  if (!nativeScroll) return { skip: "no native path to conflict with" };
+  const warnings = [];
+  const original = console.warn;
+  console.warn = (...args) => warnings.push(args.join(" "));
+  const style = document.createElement("style");
+  style.textContent = "@keyframes mine { to { opacity: .99 } } :root { animation: mine 100s linear infinite paused; }";
+  document.head.append(style);
+  let s;
+  try {
+    s = createSignals({ prefix: "c" }).use(scroll());
+    const actual = await scrollTo(0.5);
+    const value = computed("--c-scroll-y-progress");
+    expect(near(value, actual), `JS fallback gave ${value}, expected ${actual.toFixed(3)}`);
+    expect(warnings.some((w) => /something else animates :root/.test(w)), "no warning was logged");
+    expect(getComputedStyle(root).animationName.includes("mine"), "the user's animation was replaced");
+    expect(root.style.getPropertyValue("--c-scroll-y-progress") !== "", "progress was not written by JS");
+  } finally {
+    console.warn = original;
+    s?.dispose();
+    style.remove();
+    await scrollTo(0);
+  }
+});
+
+// 3 ------------------------------------------------------------------------
+await check("Temporal and Intl agree across zones and instants", async () => {
+  if (typeof Temporal === "undefined") return { skip: "this browser has no Temporal (Intl path only)" };
+  const zones = ["UTC", "Asia/Tokyo", "America/Los_Angeles", "Australia/Lord_Howe", "Asia/Kolkata"];
+  const instants = [0, Date.UTC(2026, 8, 20, 15, 4, 5, 250), Date.UTC(2027, 11, 31, 23, 59, 59), Date.UTC(2026, 2, 8, 10, 0, 0), Date.UTC(2026, 10, 1, 8, 30, 0)];
+  let compared = 0;
+  for (const timeZone of zones) {
+    for (const now of instants) {
+      const s = createSignals({ prefix: "t" }).use(
+        date({ timeZone, label: "x", temporal: true, now: () => now }),
+        date({ timeZone, label: "y", temporal: false, now: () => now })
+      );
+      s.flush();
+      for (const field of ["second", "minute", "hour", "hour24", "am", "pm", "weekday", "monthday", "month", "year"]) {
+        const a = root.style.getPropertyValue(`--t-date-x-${field}`);
+        const b = root.style.getPropertyValue(`--t-date-y-${field}`);
+        expect(a === b && a !== "", `${timeZone} @ ${now} ${field}: Temporal=${a} Intl=${b}`);
+        compared += 1;
+      }
+      s.dispose();
+    }
+  }
+  return `${compared} fields identical`;
+});
+
+await check("date publishes the real current time", async () => {
+  const s = createSignals({ prefix: "d" }).use(date({ utc: true }));
+  await frames(2);
+  const now = new Date();
+  const hour = computed("--d-date-utc-hour24");
+  const minute = computed("--d-date-utc-minute");
+  s.dispose();
+  expect(Number(hour) === now.getUTCHours(), `hour ${hour} vs ${now.getUTCHours()}`);
+  expect(Math.abs(Number(minute) - now.getUTCMinutes()) <= 1, `minute ${minute}`);
+  return `${typeof Temporal === "undefined" ? "Intl" : "Temporal"} path, UTC ${hour}:${String(minute).padStart(2, "0")}`;
+});
+
+// 4 ------------------------------------------------------------------------
+await check("CSS @function helpers: gated by @supports, correct on either path", async () => {
+  // The documented pattern: a plain calc() everywhere, the function only where @function exists.
+  const style = document.createElement("style");
+  style.textContent = `${functionsCss("u")}
+    #fn { --v: 5; width: calc(200px * 5 / 10); height: calc(1px * clamp(0, 5 / 20, 1) * 100); }
+    @supports (width: --u-map(1, 0, 1, 0px, 1px)) {
+      #fn { width: --u-map(var(--v), 0, 10, 0px, 200px); height: calc(1px * --u-progress(var(--v), 0, 20) * 100); }
+    }`;
+  document.head.append(style);
+  const el = document.createElement("div");
+  el.id = "fn";
+  document.body.append(el);
+  await frames(2);
+  const w = getComputedStyle(el).width;
+  const h = getComputedStyle(el).height;
+  const gate = CSS.supports("(width: --u-map(1, 0, 1, 0px, 1px))");
+  style.remove();
+  el.remove();
+  expect(w === "100px" && h === "25px", `width ${w}, height ${h} (expected 100px, 25px)`);
+  return `${gate ? "@function path" : "calc() fallback path"}: ${w}, ${h}`;
+});
+
+await check("registered properties can be transitioned (replaces style-animator)", async () => {
+  const style = document.createElement("style");
+  style.textContent = ":root { transition: --s-pointer-x 600ms linear; }";
+  document.head.append(style);
+  const s = createSignals({ prefix: "s" }).use(pointer());
+  s.set("pointer-x", 0);
+  s.flush();
+  await frames(2);
+  s.set("pointer-x", 1000);
+  s.flush();
+  // Sample once per frame instead of sleeping, so a throttled tab cannot skip past the transition.
+  const samples = [];
+  const started = performance.now();
+  while (performance.now() - started < 3000) {
+    await frames(1);
+    samples.push(Number(computed("--s-pointer-x")));
+    if (samples.at(-1) === 1000) break;
+  }
+  const between = samples.filter((v) => v > 0 && v < 1000);
+  const end = samples.at(-1);
+  s.dispose();
+  style.remove();
+  expect(between.length >= 1, `no in-between value in ${samples.length} frames: ${samples.join(", ")}`);
+  expect(end === 1000, `expected 1000 at the end, got ${end}`);
+  const mid = between[Math.floor(between.length / 2)];
+  return `0 -> ${Math.round(mid)} -> ${end} (${between.length} in-between frames)`;
+});
+
+// 5 ------------------------------------------------------------------------
+await check("keyboard: press, release, chord, and blur", async () => {
+  const s = createSignals({ prefix: "k" }).use(keyboard());
+  const fire = (type, init) => document.dispatchEvent(new KeyboardEvent(type, { bubbles: true, ...init }));
+  fire("keydown", { code: "KeyW", key: "w", ctrlKey: true });
+  await frames(2);
+  expect(computed("--k-key-KeyW") === "1", `KeyW=${computed("--k-key-KeyW")}`);
+  expect(computed("--k-key-ctrl") === "1", "ctrl not set");
+  fire("keyup", { code: "KeyW", key: "w", ctrlKey: true });
+  await frames(2);
+  expect(computed("--k-key-KeyW") === "0", "KeyW not released");
+  fire("keydown", { code: "KeyA", key: "a" });
+  window.dispatchEvent(new Event("blur"));
+  await frames(2);
+  const afterBlur = computed("--k-key-KeyA");
+  s.dispose();
+  expect(afterBlur === "0", `blur left KeyA at ${afterBlur}`);
+});
+
+await check("pointer + viewport publish through real events", async () => {
+  const s = createSignals({ prefix: "p" }).use(pointer(), viewport());
+  document.dispatchEvent(new PointerEvent("pointermove", { clientX: 120, clientY: 45, bubbles: true }));
+  await frames(2);
+  const x = computed("--p-pointer-x");
+  const w = computed("--p-viewport-width");
+  s.dispose();
+  expect(x === "120", `pointer-x ${x}`);
+  expect(Number(w) === innerWidth, `viewport-width ${w} vs ${innerWidth}`);
+});
+
+await check("input and cycle: controls become properties", async () => {
+  const box = document.createElement("div");
+  box.innerHTML = `<input id="r" type="range" min="0" max="1" step="any" value="0.4" data-signal="vol">
+    <input id="t" type="text" value='say "hi"' data-signal="msg">
+    <button id="c" data-signal-cycle="accent" data-signal-values="red;green;blue">next</button>`;
+  document.body.append(box);
+  const s = createSignals({ prefix: "i" }).use(input(), cycle());
+  await frames(2);
+  const initial = [computed("--i-input-vol"), computed("--i-cycle-accent"), computed("--i-cycle-accent-index")];
+  box.querySelector("#c").click();
+  const r = box.querySelector("#r");
+  r.value = "0.9";
+  r.dispatchEvent(new Event("input", { bubbles: true }));
+  await frames(2);
+  const after = [computed("--i-input-vol"), computed("--i-cycle-accent"), computed("--i-cycle-accent-index")];
+  // Use the string in a real declaration: content: var(--i-input-msg)
+  const style = document.createElement("style");
+  style.textContent = "#m::before { content: var(--i-input-msg); }";
+  document.head.append(style);
+  const m = document.createElement("span");
+  m.id = "m";
+  document.body.append(m);
+  await frames(1);
+  const content = getComputedStyle(m, "::before").content;
+  s.dispose();
+  box.remove(); style.remove(); m.remove();
+  expect(near(initial[0], 0.4) && initial[1] === "red" && initial[2] === "0", `initial ${initial}`);
+  expect(near(after[0], 0.9) && after[1] === "green" && after[2] === "1", `after ${after}`);
+  expect(content === '"say \\"hi\\""' || content === 'say "hi"' || content.includes("say"), `content: ${content}`);
+  return `range ${initial[0]} -> ${after[0]}; cycle ${initial[1]} -> ${after[1]}; content ${content}`;
+});
+
+await check("random: seeded rolls are reproducible; reset re-rolls", async () => {
+  const roll = async (seed) => {
+    const s = createSignals({ prefix: "r" }).use(random({ count: 3, seed }));
+    await frames(2);
+    const values = [0, 1, 2].map((i) => computed(`--r-random-${i}`)).join(",");
+    s.dispose();
+    return values;
+  };
+  const a = await roll(42);
+  const b = await roll(42);
+  expect(a === b, `seed 42 gave ${a} then ${b}`);
+  expect(a !== (await roll(7)), "different seeds matched");
+});
+
+// 6 ------------------------------------------------------------------------
+await check("an iframe's window works (cross-realm AbortSignal)", async () => {
+  const frame = document.createElement("iframe");
+  frame.style.cssText = "width: 200px; height: 100px";
+  document.body.append(frame);
+  await sleep(50);
+  const win = frame.contentWindow;
+  const s = createSignals({ window: win, prefix: "f" }).use(framed(), viewport());
+  await new Promise((r) => win.requestAnimationFrame(() => win.requestAnimationFrame(r)));
+  const style = win.document.documentElement.style;
+  const iframe = style.getPropertyValue("--f-framed-iframe");
+  const top = style.getPropertyValue("--f-framed-top");
+  const width = style.getPropertyValue("--f-viewport-width");
+  s.dispose();
+  frame.remove();
+  expect(iframe === "1" && top === "0", `framed-iframe=${iframe} framed-top=${top}`);
+  expect(Number(width) > 0 && Number(width) <= 200, `viewport-width in iframe: ${width}`);
+});
+
+await check("top-level page reports framed-top", async () => {
+  const s = createSignals({ prefix: "g" }).use(framed());
+  await frames(2);
+  const top = computed("--g-framed-top");
+  s.dispose();
+  expect(top === (window === window.top ? "1" : "0"), `framed-top=${top}`);
+});
+
+await check("dispose removes every property and stylesheet", async () => {
+  const s = createSignals({ prefix: "z" }).use(pointer(), scroll(), viewport(), keyboard(), date({ utc: true }));
+  await frames(3);
+  const wrote = (root.getAttribute("style") ?? "").includes("--z-");
+  s.dispose();
+  await frames(2);
+  const left = (root.getAttribute("style") ?? "").includes("--z-");
+  const sheets = document.querySelectorAll("style[data-css-signals]").length + document.adoptedStyleSheets.length;
+  expect(wrote, "nothing was written");
+  expect(!left, `properties left behind: ${root.getAttribute("style")}`);
+  expect(sheets === 0, `${sheets} stylesheet(s) left behind`);
+});
+
+// ---- report ----------------------------------------------------------------
+const counts = { PASS: 0, FAIL: 0, SKIP: 0 };
+for (const r of results) counts[r.status] += 1;
+const tbody = document.querySelector("#results tbody");
+for (const r of results) {
+  const tr = document.createElement("tr");
+  for (const text of [r.status, r.name, r.detail]) {
+    const td = document.createElement("td");
+    td.textContent = text;
+    tr.append(td);
+  }
+  tr.firstChild.className = r.status;
+  tbody.append(tr);
+}
+const summary = `${counts.FAIL ? "FAIL" : "PASS"}: ${counts.PASS} passed, ${counts.FAIL} failed, ${counts.SKIP} skipped`;
+document.getElementById("summary").textContent = summary;
+const failures = results.filter((r) => r.status === "FAIL");
+if (failures.length) {
+  const list = document.createElement("p");
+  list.className = "FAIL";
+  list.textContent = failures.map((r) => `${r.name}: ${r.detail}`).join("  //  ");
+  document.getElementById("summary").after(list);
+}
+document.title = `css-signals verify: ${summary}`;
+document.getElementById("env").textContent =
+  `${navigator.userAgent} | scroll-driven animations: ${nativeScroll} | Temporal: ${typeof Temporal !== "undefined"}`;
+window.__results = results;
+</script>
+</body>
+</html>

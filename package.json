@@ -1,0 +1,57 @@
+{
+  "name": "@johnhenry/css-signals",
+  "version": "0.0.0",
+  "description": "Publish live browser state (pointer, scroll, viewport, ...) as typed CSS custom properties under a runtime-configurable prefix. Native CSS where the browser can do it, batched JS where it can't.",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "types": "./src/types.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/types.d.ts",
+      "default": "./src/index.mjs"
+    },
+    "./sources": {
+      "types": "./src/types.d.ts",
+      "default": "./src/sources/index.mjs"
+    },
+    "./css": {
+      "types": "./src/types.d.ts",
+      "default": "./src/css.mjs"
+    },
+    "./signals.css": "./css/signals.css",
+    "./utils.css": "./css/utils.css"
+  },
+  "files": [
+    "src",
+    "css",
+    "scripts"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "build:css": "node scripts/build-css.mjs",
+    "prepublishOnly": "npm run build:css && npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnhenry/css-signals.git"
+  },
+  "homepage": "https://opensource.johnhenry.me/css-signals/",
+  "keywords": [
+    "css",
+    "custom-properties",
+    "css-variables",
+    "houdini",
+    "@property",
+    "scroll-driven-animations",
+    "signals"
+  ],
+  "author": "John Henry",
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^30.1.0"
+  }
+}

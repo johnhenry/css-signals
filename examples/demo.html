@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>css-signals demo</title>
+<style>
+  :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+  body { margin: 0; min-height: 300vh; background: Canvas; color: CanvasText; }
+  main { max-width: 42rem; margin: 0 auto; padding: 5rem 1rem; position: relative; }
+  h1 { margin-top: 0; }
+  code { font-family: ui-monospace, monospace; }
+  .panel { position: sticky; top: 1rem; padding: 1rem; border: 1px solid; border-radius: .5rem; background: Canvas; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0; }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+</style>
+<!-- Everything below is written from JS so the CSS can use whatever prefix the
+     page chose. CSS cannot compute a custom property's name; JS can. -->
+<style id="dynamic"></style>
+</head>
+<body>
+<div id="bar"></div>
+<div id="spot"></div>
+<main>
+  <h1>css-signals</h1>
+  <div class="panel">
+    <dl>
+      <dt>prefix</dt>      <dd id="prefix"></dd>
+      <dt>scroll mode</dt> <dd id="mode"></dd>
+      <dt>scroll</dt>      <dd id="scroll"></dd>
+      <dt>pointer x</dt>   <dd id="px"></dd>
+      <dt>viewport</dt>    <dd id="vw"></dd>
+    </dl>
+    <p>Scroll, move the pointer, resize the window. Every number above is
+    rendered by CSS <code>counter()</code> from a custom property; no DOM
+    text is ever written.</p>
+    <p>Try <a href="?prefix=demo"><code>?prefix=demo</code></a>,
+    <a href="?prefix="><code>?prefix=</code></a> (none), or
+    <a href="?prefix=1bad"><code>?prefix=1bad</code></a> (rejected).</p>
+  </div>
+</main>
+<script type="module">
+  import { createSignals, pointer, scroll, viewport } from "../src/index.mjs";
+
+  const params = new URLSearchParams(location.search);
+  const prefix = params.get("prefix") ?? "sig";
+  const v = (key) => `var(--${prefix ? `${prefix}-` : ""}${key})`;
+
+  document.getElementById("prefix").textContent = JSON.stringify(prefix);
+  document.getElementById("mode").textContent = CSS.supports("animation-timeline: scroll()")
+    ? "native (CSS scroll timeline)"
+    : "JS fallback (scroll listener)";
+
+  document.getElementById("dynamic").textContent = `
+    #bar  { position: fixed; inset: 0 0 auto 0; height: 4px; background: LinkText;
+            transform-origin: 0 50%; transform: scaleX(${v("scroll-y-progress")}); z-index: 2; }
+    #spot { position: fixed; width: 2rem; height: 2rem; margin: -1rem 0 0 -1rem; border-radius: 50%;
+            background: LinkText; opacity: .35; pointer-events: none; z-index: 1;
+            left: calc(${v("pointer-x")} * 1px); top: calc(${v("pointer-y")} * 1px);
+            scale: calc(1 + ${v("pointer-down")}); }
+    #scroll { counter-set: n calc(${v("scroll-y-progress")} * 100); }
+    #scroll::after { content: counter(n) "%"; }
+    #px { counter-set: n ${v("pointer-x")}; }
+    #px::after { content: counter(n) "px"; }
+    #vw { counter-set: w ${v("viewport-width")} h ${v("viewport-height")}; }
+    #vw::after { content: counter(w) " × " counter(h); }
+  `;
+
+  try {
+    globalThis.signals = createSignals({ prefix }).use(pointer(), scroll(), viewport());
+  } catch (error) {
+    document.getElementById("mode").textContent = `error: ${error.message}`;
+  }
+</script>
+</body>
+</html>
