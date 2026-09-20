@@ -17,6 +17,12 @@ const signals = createSignals({ prefix: "app" }).use(pointer(), scroll(), viewpo
 #width::after { counter-set: w var(--app-viewport-width); content: counter(w) "px"; }
 ```
 
+> **Provenance.** A ground-up rewrite of the `css-model` and `css-variables-*`
+> modules in [`johnhenry/lib`](https://github.com/johnhenry/lib), which were
+> never published to npm. There is no earlier npm release to restart from;
+> `0.0.0` is the first version under any name, not a maturity signal. See
+> `CHANGELOG.md` for what changed and what was dropped.
+
 `examples/demo.html` is a working page (`?prefix=demo` to change the prefix).
 
 ## Install

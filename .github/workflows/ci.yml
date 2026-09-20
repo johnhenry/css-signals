@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        # engines.node >=24.0.0. The library itself is browser code; Node only
+        # runs the jsdom tests and the CSS generator, so the floor and the
+        # newest major are the two that matter.
+        node-version: [24, 26]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  generated-css:
+    # css/*.css is generated from src/ for the default prefix and is shipped in
+    # the package. A stale copy would publish CSS that disagrees with the JS.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:css
+      - run: git diff --exit-code -- css

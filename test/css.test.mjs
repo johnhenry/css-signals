@@ -35,8 +35,13 @@ test("sourcesCss with an empty prefix is unprefixed", () => {
 });
 
 test("the build script honours --prefix and --out", () => {
-  const out = join(mkdtempSync(join(tmpdir(), "css-signals-")), "signals.css");
-  execFileSync(process.execPath, ["scripts/build-css.mjs", "--prefix", "demo", "--out", out]);
+  // Always redirect BOTH outputs: the defaults are the repo's own css/ files, and
+  // a test that forgot --utils-out once overwrote css/utils.css with a "demo" prefix.
+  const dir = mkdtempSync(join(tmpdir(), "css-signals-"));
+  const out = join(dir, "signals.css");
+  execFileSync(process.execPath, [
+    "scripts/build-css.mjs", "--prefix", "demo", "--out", out, "--utils-out", join(dir, "utils.css"),
+  ]);
   const css = readFileSync(out, "utf8");
   assert.match(css, /prefix: "demo"/);
   assert.match(css, /@property --demo-scroll-y-progress /);
@@ -89,4 +94,13 @@ test("the build script writes utils.css alongside signals.css", () => {
   ]);
   assert.match(readFileSync(join(dir, "b.css"), "utf8"), /@function --demo-map\(/);
   assert.match(readFileSync(join(dir, "a.css"), "utf8"), /@property --demo-key-alt /);
+});
+
+test("the committed css/ files are for the default prefix (running the tests must not change them)", () => {
+  const signals = readFileSync("css/signals.css", "utf8");
+  const utils = readFileSync("css/utils.css", "utf8");
+  assert.match(signals, /prefix: "sig"/);
+  assert.match(utils, /prefix: "sig"/);
+  assert.match(utils, /@function --sig-map\(/);
+  assert.doesNotMatch(utils, /--demo-/);
 });
