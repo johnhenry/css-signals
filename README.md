@@ -1,5 +1,11 @@
 # @johnhenry/css-signals
 
+[![npm version](https://img.shields.io/npm/v/%40johnhenry%2Fcss-signals.svg)](https://www.npmjs.com/package/@johnhenry/css-signals)
+[![CI](https://github.com/johnhenry/css-signals/actions/workflows/ci.yml/badge.svg)](https://github.com/johnhenry/css-signals/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/%40johnhenry%2Fcss-signals.svg)](LICENSE)
+
+Full documentation: [opensource.johnhenry.me/css-signals](https://opensource.johnhenry.me/css-signals/)
+
 Publish live browser state -- pointer, scroll, viewport -- as **typed CSS custom
 properties** under a **runtime-configurable prefix**. Where the browser can
 compute a value in CSS alone, it does. Where it can't, a small batched JS source
@@ -24,6 +30,19 @@ const signals = createSignals({ prefix: "app" }).use(pointer(), scroll(), viewpo
 > `CHANGELOG.md` for what changed and what was dropped.
 
 `examples/demo.html` is a working page (`?prefix=demo` to change the prefix).
+
+## Contents
+
+- [Install](#install)
+- [What you get](#what-you-get)
+- [The prefix is dynamic](#the-prefix-is-dynamic)
+- [CSS helpers (optional)](#css-helpers-optional)
+- [Smoothing](#smoothing)
+- [Lifecycle](#lifecycle)
+- [Options](#options)
+- [Writing a source](#writing-a-source)
+- [Browser support](#browser-support)
+- [Status](#status)
 
 ## Install
 

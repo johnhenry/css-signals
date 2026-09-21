@@ -14,7 +14,9 @@ jobs:
         # engines.node >=24.0.0. The library itself is browser code; Node only
         # runs the jsdom tests and the CSS generator, so the floor and the
         # newest major are the two that matter.
-        node-version: [24, 26]
+        # engines.node >=26.0.0 -- test the floor version directly rather
+        # than a matrix of now-unsupported older majors.
+        node-version: [26]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
