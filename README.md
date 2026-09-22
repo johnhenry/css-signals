@@ -40,7 +40,7 @@ const signals = createSignals({ prefix: "app" }).use(pointer(), scroll(), viewpo
 - [Smoothing](#smoothing)
 - [Lifecycle](#lifecycle)
 - [Options](#options)
-- [Writing a source](#writing-a-source)
+- [Adding a new source](#adding-a-new-source)
 - [Browser support](#browser-support)
 - [Status](#status)
 
@@ -163,28 +163,61 @@ Writes are batched to one per animation frame, skip unchanged values, and ignore
 If the browser refuses a property registration (WebKit 18 rejects `<string>`),
 the core warns and carries on: the value is still written, just untyped.
 
-## Writing a source
+## Adding a new source
 
-A source is an object; the core hands it a context.
+`date()` is the best real worked example already in this package -- it is the
+one source with a fallback path (Temporal when present, `Intl` otherwise) and
+a real gotcha (see `CHANGELOG.md`'s "Found by testing in real browsers"
+entries), so reading `src/sources/date.mjs` alongside this section shows both
+the common case and where it gets harder.
 
-```js
-const time = () => ({
-  name: "time",
-  properties: { "time-second": { syntax: "<number>", initialValue: 0 } },
-  start({ set, signal, window }) {
-    const tick = () => set("time-second", new Date().getSeconds());
-    const id = window.setInterval(tick, 1000);
-    signal.addEventListener("abort", () => clearInterval(id), { once: true });
-    tick();
-  },
-});
-signals.use(time());
-```
+There is no "smallest" alternative to reach for first: unlike a tag or
+primitive registry, sources here do not share a base class or a branch inside
+one big function -- each one is an independent module with no dependency on
+its siblings (`src/sources/framed.mjs`, the shortest, is 15 lines). Adding a
+new source is always this same small shape; there is nothing to extend
+instead.
 
-`set(key, value)` takes an unprefixed key. Pass `signal` to `addEventListener`
-and there is nothing to clean up by hand. For names only known at runtime,
-call `define(key, { syntax, initialValue })` first. See `src/types.d.ts` for the
-full context.
+A source is a factory returning `{ name, properties, css?, start(ctx) }`. The
+core hands `start` a context (`set`, `define`, `signal`, `window`, `target`);
+sources never touch the DOM directly.
+
+1. **`src/sources/<name>.mjs`** -- the factory. Declare every property it
+   publishes in `properties` using `number()` from `src/properties.mjs` (or a
+   raw `{ syntax, initialValue, inherits }` for a non-numeric one -- register
+   with `*`, not `<string>`; WebKit 18 rejects `<string>` with any initial
+   value, see AGENTS.md). `start({ set, signal, window })` wires up listeners;
+   pass `signal` to every `addEventListener` so `dispose()` cleans it up for
+   free, without a manual teardown list.
+2. **`src/sources/index.mjs`** -- add one `export { <name> } from
+   "./<name>.mjs";` line. This is the only registry: there is no separate
+   allowlist or factory-name map to update, unlike a tag- or protocol-shaped
+   plugin system.
+3. **The one part that isn't boilerplate: the `start()` body.** This is where
+   a source decides *how* to fill in what CSS alone cannot compute --
+   `date()`'s trick is picking `Temporal` over `Intl` only when both the
+   feature flag and `globalThis.Temporal` are present, so the published
+   values are identical either way and downstream CSS never has to know which
+   path ran.
+4. **Optional: a `css(prefix)` function** on the returned object, only if the
+   source has a native-CSS equivalent worth shipping in the generated
+   stylesheet (see `scroll.mjs`'s scroll-timeline rule). Most sources have
+   none and omit `css` entirely.
+5. **Tests: `test/sources.test.mjs` or `test/more-sources.test.mjs`**, run
+   under jsdom with the fakes in `test/_dom.mjs` -- there is no live browser
+   in CI, so anything that only a real engine can prove (WebKit's `<string>`
+   rejection, `@function` fallback behaviour) is instead checked by
+   `examples/verify.html` and called out as such in "Browser support",
+   not silently assumed to work.
+
+Run `npm test` to see it pass under jsdom, then open `examples/verify.html`
+in at least two real engines before calling it done -- this package's own
+CHANGELOG exists because jsdom alone missed three real bugs.
+
+`set(key, value)` takes an unprefixed key. For names only known at runtime
+(hardware-dependent gamepad buttons, per-control input names), call
+`define(key, { syntax, initialValue })` before the first `set()` for that key.
+See `src/types.d.ts` for the full context shape.
 
 ## Browser support
 
@@ -209,6 +242,13 @@ each get native progress.
 
 `0.0.0`. Every source from the `johnhenry/lib` originals is ported or
 deliberately replaced (see `CHANGELOG.md`).
+
+`css/signals.css` and `css/utils.css` are generated, committed files that
+ship in the published tarball. CI regenerates them and fails the build if the
+committed copy has drifted from what `npm run build:css` produces -- a
+dedicated `generated-css` job in `ci.yml`, and the same check as a step in
+`publish.yml` before the package is ever published -- so a stale generated
+file can't reach npm silently.
 
 **Tested** with jsdom (`npm test`, 83 tests) and by `examples/verify.html`, a
 self-checking page that runs the library in a real browser and reports

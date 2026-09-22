@@ -1,9 +1,12 @@
 # Changelog
 
-## 0.0.0 -- initial release
+## 0.0.0 -- initial release (2026-09-20)
 
 A rewrite, not a port, of the `johnhenry/lib` modules `css-model` and its
-plugins, and the `css-variables-*` modules.
+plugins, and the `css-variables-*` modules -- those were never published to
+npm, so there is no earlier unscoped version to restart from and no
+deprecation to issue; `0.0.0` is the first version under any name, not a
+maturity signal.
 
 **Added**
 
