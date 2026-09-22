@@ -7,36 +7,14 @@ on:
 
 jobs:
   test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        # engines.node >=24.0.0. The library itself is browser code; Node only
-        # runs the jsdom tests and the CSS generator, so the floor and the
-        # newest major are the two that matter.
-        # engines.node >=26.0.0 -- test the floor version directly rather
-        # than a matrix of now-unsupported older majors.
-        node-version: [26]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: npm
-      - run: npm ci
-      - run: npm test
-
-  generated-css:
-    # css/*.css is generated from src/ for the default prefix and is shipped in
-    # the package. A stale copy would publish CSS that disagrees with the JS.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run build:css
-      - run: git diff --exit-code -- css
+    uses: johnhenry/workflows/.github/workflows/ci.yml@v1
+    with:
+      node-versions: '["26"]'
+      os: '["ubuntu-latest", "windows-latest"]'
+      gate-commands: npm test
+      # css/*.css is generated from src/ for the default prefix and is
+      # shipped in the package. A stale copy would publish CSS that
+      # disagrees with the JS.
+      drift-check: true
+      drift-build-command: npm run build:css
+      drift-path: css
