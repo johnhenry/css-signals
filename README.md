@@ -40,6 +40,7 @@ const signals = createSignals({ prefix: "app" }).use(pointer(), scroll(), viewpo
 - [Smoothing](#smoothing)
 - [Lifecycle](#lifecycle)
 - [Options](#options)
+- [One-way by design (no JS read-back)](#one-way-by-design-no-js-read-back)
 - [Adding a new source](#adding-a-new-source)
 - [Browser support](#browser-support)
 - [Status](#status)
@@ -162,6 +163,33 @@ Writes are batched to one per animation frame, skip unchanged values, and ignore
 
 If the browser refuses a property registration (WebKit 18 rejects `<string>`),
 the core warns and carries on: the value is still written, just untyped.
+
+## One-way by design (no JS read-back)
+
+There is no `getSignal()`, `readSignal()`, or any other JS getter on
+`Signals` or `SignalContext` (see `src/types.d.ts`) -- `set()`, `name()`, and
+`define()` only write. This is deliberate, not a gap: this library's whole
+job is turning live browser state into typed CSS custom properties so the
+*styling* loop never touches JS again. Reading a value back out is a
+different problem with a different, standard tool, and adding a bespoke
+getter would just shadow it. (A module that did reflect variables back into
+JS/DOM, `css-model-output`, existed in the pre-fork history and was dropped
+for this rewrite -- see "Dropped, with reasons" in `CHANGELOG.md`.)
+
+If you need a signal's current value in JS, read the custom property the
+normal way, with `getComputedStyle`:
+
+```js
+const width = getComputedStyle(document.documentElement)
+  .getPropertyValue("--sig-viewport-width")
+  .trim(); // e.g. "1280"
+```
+
+This works for every property `createSignals()` writes, registered or not --
+once it lands on `target`, it is just a CSS custom property, and reading it
+back is no different from reading any other one. `set()` batches writes to
+one per animation frame (see "Lifecycle"), so if you need the value in the
+same frame it was set rather than the next one, call `flush()` first.
 
 ## Adding a new source
 

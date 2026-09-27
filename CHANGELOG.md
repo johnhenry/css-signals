@@ -65,3 +65,11 @@ maturity signal.
 - jsdom's `CSS.supports()` reports scroll timelines as supported, and an
   iframe's window rejects a Node-realm `AbortSignal` (the core now builds its
   `AbortController` from the target window).
+
+**Docs**
+
+- Documented that there is no JS getter for a signal's value (`set()`,
+  `name()`, `define()` only write) -- a deliberate one-way design, not a
+  gap; see "One-way by design (no JS read-back)" in `README.md`. Confirmed
+  `getComputedStyle(el).getPropertyValue("--sig-viewport-width")` is the
+  correct, standard way to read one back, in real headless Chrome.
