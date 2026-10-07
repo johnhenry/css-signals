@@ -18,3 +18,6 @@ jobs:
       drift-check: true
       drift-build-command: npm run build:css
       drift-path: css
+
+  workflow-lint:
+    uses: johnhenry/workflows/.github/workflows/workflow-lint.yml@v1
